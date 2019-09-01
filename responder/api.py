@@ -107,6 +107,8 @@ class API:
         self.templates_dir = templates_dir or self.built_in_templates_dir
 
         self.apps = {}
+        self.blueprints = {}
+        self._blueprint_order = []
         self.routes = {}
         self.before_requests = {"http": [], "ws": []}
         self.docs_theme = DEFAULT_API_THEME
@@ -589,6 +591,41 @@ class API:
         :param app: The other WSGI / ASGI app.
         """
         self.apps.update({route: app})
+
+    def register_blueprint(self, blueprint, **options):
+        """Register a :class:`~responder.Blueprint` on the application. Keyword
+        arguments passed to this method will override the defaults set on the
+        blueprint.
+        Calls the blueprint's :meth:`~responder.Blueprint.register` method after
+        recording the blueprint in the application's :attr:`blueprints`.
+        :param blueprint: The blueprint to register.
+        :param url_prefix: Blueprint routes will be prefixed with this.
+        :param subdomain: Blueprint routes will match on this subdomain.
+        :param url_defaults: Blueprint routes will use these default values for
+            view arguments.
+        :param options: Additional keyword arguments are passed to
+            :class:`~responder.blueprints.BlueprintSetupState`. They can be
+            accessed in :meth:`~responder.Blueprint.record` callbacks.
+        """
+        first_registration = False
+        if blueprint.name in self.blueprints:
+            assert self.blueprints[blueprint.name] is blueprint, (
+                "A name collision occurred between blueprints %r and %r. Both"
+                ' share the same name "%s". Blueprints that are created on the'
+                " fly need unique names."
+                % (blueprint, self.blueprints[blueprint.name], blueprint.name)
+            )
+        else:
+            self.blueprints[blueprint.name] = blueprint
+            self._blueprint_order.append(blueprint)
+            first_registration = True
+
+        blueprint.register(self, options, first_registration)
+
+    def iter_blueprints(self):
+        """Iterates over all blueprints by the order they were registered.
+        """
+        return iter(self._blueprint_order)
 
     def session(self, base_url="http://;"):
         """Testing HTTP client. Returns a Requests session object, able to send HTTP requests to the Responder application.
